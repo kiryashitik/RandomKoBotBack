@@ -13,6 +13,8 @@ from aiogram.filters import Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler
+from aiohttp import web
 from fastapi import FastAPI, Request
 import uvicorn
 from database import User, Contest, get_db
@@ -184,12 +186,42 @@ async def check_subscription(request: Request):
     except Exception as e:
         return {"error": str(e)}
 
+async def on_startup(bot: Bot):
+    await bot.set_webhook(
+        url="https://RandomKoBot.pythonanywhere.com/webhook",
+        drop_pending_updates=True
+    )
+
+
+
 # Запуск приложения
 async def run_bot():
-    await dp.start_polling(Config.bot)
+    await on_startup(Config.bot)
+    
+    app = web.Application()
+    webhook_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=Config.bot  # Важно передать бота явно!
+    )
+    webhook_handler.register(app, path="/webhook")
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8000)  # PythonAnywhere использует порт 8000
+    await site.start()
+
+    # Бесконечный цикл для поддержания работы
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     import asyncio
  
     # Запуск бота
-    asyncio.run(run_bot())
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        print("Bot stopped")
+
+# Для работы через WSGI
+application = app
